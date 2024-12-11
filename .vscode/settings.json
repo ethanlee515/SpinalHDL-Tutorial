@@ -1,0 +1,11 @@
+{
+    "files.watcherExclude": {
+        "**/target": true
+    },
+    "[scala]": {
+        "editor.tabSize": 2
+    },
+    "metals": {
+        "millScript": "./mill"
+    }
+}
