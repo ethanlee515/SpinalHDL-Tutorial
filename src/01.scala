@@ -255,6 +255,23 @@ object Ex1 extends App {
   // write your test here
 }
 
+object MulDemo extends App {
+  case class MulDemo() extends Component {
+    val x = in(SInt(10 bits))
+    val y = in(SInt(10 bits))
+    val z = out(SInt(10 bits))
+
+    val m = x * y // the width of m is 20
+    println(s"m width: ${m.getBitsWidth}")
+    // resized: https://spinalhdl.github.io/SpinalDoc-RTD/master/SpinalHDL/Data%20types/Int.html#misc
+    //z := m(0, 10 bits)
+    //z := m(9 downto 0)
+    z := m.resized
+  }
+
+  SpinalVerilog(MulDemo())
+}
+
 object Ex2 extends App {
   case class Complex(n: Int) extends Bundle {
     val r = SInt(n bits)
