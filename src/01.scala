@@ -279,16 +279,17 @@ object Ex1 extends App {
   SpinalVerilog(SumOfSIntPipeline(10, 16))
 
   // write your test here
+
+  // generate inputs
   val nEvals = 8
-  val nTerms = 19
+  val nTerms = 6
   val w = 8
-  val lst = List.fill(nEvals)(List.fill(nTerms)(Random.nextInt(6)))
+  val lst = List.fill(nEvals)(List.fill(nTerms)(Random.nextInt(11) - 5))
+  // do computation
   var reference : List[Int] = List()
   var outcomes : List[Int] = List()
-
-  // do computation
   SimConfig.compile { SumOfSIntPipeline(w, nTerms) }.doSim { dut =>
-    //clock boilerplate
+    // clock boilerplate
     val cd = dut.clockDomain
     cd.forkStimulus(10)
     cd.waitSampling()
@@ -297,7 +298,7 @@ object Ex1 extends App {
     cd.deassertReset()
     cd.waitSampling()
     sleep(10)
-
+    // run the actual simulation
     for(i <- 0 until nEvals) {
       var s = 0
       for(j <- 0 until nTerms) {
@@ -316,9 +317,7 @@ object Ex1 extends App {
 
     outcomes = outcomes.drop(dut.delays)
   }
-
-  // checking results
-
+  // check results
   for(i <- 0 until nEvals) {
     print(lst(i)(0))
     for(j <- 1 until nTerms) {
@@ -362,7 +361,60 @@ object Ex2 extends App {
     val z = out(Complex(n))
 
     // implement here
+    val xryr, xiyi, xryi, xiyr = Reg(SInt(n bits))
+    xryr := (x.r * y.r).resized
+    xiyi := (x.i * y.i).resized
+    xryi := (x.r * y.i).resized
+    xiyr := (x.i * y.r).resized
+    z.r := xryr - xiyi
+    z.i := xryi + xiyr
   }
 
   // write your test here
+
+  // generate inputs
+  case class Cx(re: Int, im: Int)
+  val nEvals = 8
+  val lst = List.fill(nEvals)((Cx(Random.nextInt(11) - 6, Random.nextInt(11) - 6), Cx(Random.nextInt(11) - 6, Random.nextInt(11) - 6)))
+  // run computation
+  var reference : List[Cx] = List()
+  var outcomes : List[Cx] = List()
+  SimConfig.compile { ComplexMul(8) }.doSim { dut =>
+    // clock boilerplate
+    val cd = dut.clockDomain
+    cd.forkStimulus(10)
+    cd.waitSampling()
+    cd.assertReset()
+    cd.waitRisingEdge()
+    cd.deassertReset()
+    cd.waitSampling()
+    sleep(10)
+    // run the actual simulation
+    for(i <- 0 until nEvals) {
+      val z1 = lst(i)._1
+      val z2 = lst(i)._2
+      val re = z1.re * z2.re - z1.im * z2.im
+      val im = z1.re * z2.im + z1.im * z2.re
+      reference = reference :+ Cx(re, im)
+
+      dut.x.r #= z1.re
+      dut.x.i #= z1.im
+      dut.y.r #= z2.re
+      dut.y.i #= z2.im
+      outcomes = outcomes :+ Cx(dut.z.r.toInt, dut.z.i.toInt)
+      sleep(10)
+    }
+
+    outcomes = outcomes.drop(1) :+ Cx(dut.z.r.toInt, dut.z.i.toInt)
+  }
+  // check output
+  for(i <- 0 until nEvals) {
+    val z1 = lst(i)._1
+    val z2 = lst(i)._2
+    val z1z2 = outcomes(i)
+    println(s"(${z1.re} + ${z1.im}i)(${z2.re} + ${z2.im}i) = ${z1z2.re} + ${z1z2.im}i")
+    if(z1z2 != reference(i)) {
+      println("wrong result!")
+    }
+  }
 }
