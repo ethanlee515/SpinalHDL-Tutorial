@@ -281,8 +281,8 @@ object Ex1 extends App {
   // write your test here
 
   // generate inputs
-  val nEvals = 8
-  val nTerms = 6
+  val nEvals = 8 // flexible parameter
+  val nTerms = 6 // flexible parameter
   val w = 8
   val lst = List.fill(nEvals)(List.fill(nTerms)(Random.nextInt(11) - 5))
   // do computation
@@ -374,7 +374,7 @@ object Ex2 extends App {
 
   // generate inputs
   case class Cx(re: Int, im: Int)
-  val nEvals = 8
+  val nEvals = 8 // flexible parameter
   val lst = List.fill(nEvals)((Cx(Random.nextInt(11) - 6, Random.nextInt(11) - 6), Cx(Random.nextInt(11) - 6, Random.nextInt(11) - 6)))
   // run computation
   var reference : List[Cx] = List()
