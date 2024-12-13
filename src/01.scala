@@ -3,6 +3,7 @@ package basic
 import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
+import scala.util.Random
 
 object DeclareWire extends App {
   case class DeclareWire() extends Component {
@@ -245,14 +246,89 @@ object Ex1 extends App {
     val dataType = HardType(SInt(w bits))
     val i = in(Vec.fill(n)(dataType()))
     val o = out(dataType())
+    var delays = 1
 
     // implement here
+    
+    val sz = (n + 1) / 2
+    var terms = Reg(Vec.fill(sz)(dataType()))
+    for(j <- 0 until sz) {
+      if(2 * j + 1 != i.size) {
+        terms(j) := i(2 * j) + i(2 * j + 1)
+      } else {
+        terms(j) := i(2 * j)
+      }
+    }
 
+    while(terms.size != 1) {
+      val new_sz = (terms.size + 1) / 2
+      var next_terms = Reg(Vec.fill(new_sz)(dataType()))
+      for(j <- 0 until new_sz) {
+        if(2 * j + 1 != terms.size) {
+          next_terms(j) := terms(2 * j) + terms(2 * j + 1)
+        } else {
+          next_terms(j) := terms(2 * j)
+        }
+      }
+      terms = next_terms
+      delays += 1
+    }
+    o := terms(0)
   }
 
   SpinalVerilog(SumOfSIntPipeline(10, 16))
 
   // write your test here
+  val nEvals = 8
+  val nTerms = 19
+  val w = 8
+  val lst = List.fill(nEvals)(List.fill(nTerms)(Random.nextInt(6)))
+  var reference : List[Int] = List()
+  var outcomes : List[Int] = List()
+
+  // do computation
+  SimConfig.compile { SumOfSIntPipeline(w, nTerms) }.doSim { dut =>
+    //clock boilerplate
+    val cd = dut.clockDomain
+    cd.forkStimulus(10)
+    cd.waitSampling()
+    cd.assertReset()
+    cd.waitRisingEdge()
+    cd.deassertReset()
+    cd.waitSampling()
+    sleep(10)
+
+    for(i <- 0 until nEvals) {
+      var s = 0
+      for(j <- 0 until nTerms) {
+        s += lst(i)(j)
+        dut.i(j) #= lst(i)(j)
+      }
+      outcomes = outcomes :+ dut.o.toInt
+      reference = reference :+ s
+      sleep(10)
+    }
+
+    for(_ <- 0 until dut.delays) {
+      outcomes = outcomes :+ dut.o.toInt
+      sleep(10)
+    }
+
+    outcomes = outcomes.drop(dut.delays)
+  }
+
+  // checking results
+
+  for(i <- 0 until nEvals) {
+    print(lst(i)(0))
+    for(j <- 1 until nTerms) {
+      print(s" + ${lst(i)(j)}")
+    }
+    println(s" = ${outcomes(i)}")
+    if(outcomes(i) != reference(i)) {
+      println("wrong result!")
+    }
+  }
 }
 
 object MulDemo extends App {
