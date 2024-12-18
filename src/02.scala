@@ -155,9 +155,54 @@ object Ex3 extends App {
 
     // implement a fifo
     // after implementation, see StreamFifo(dataType, depth = 10)
+    val indexSize = depth.toBinaryString.length
+    val headIndex, tailIndex = Reg(UInt(indexSize bits)) init U(0)
+    val vec = Vec.fill(depth)(Reg(dataType))
+    // pushing to head, popping from tail
+    pop.payload := vec(tailIndex)
+    pop.valid := (headIndex =/= tailIndex)
+    push.ready := ((headIndex =/= depth - 1 & tailIndex =/= headIndex + 1) |
+      (headIndex === depth - 1 & tailIndex =/= 0))
+    when(pop.fire) {
+      tailIndex := (tailIndex === depth - 1) ? U(0) | (tailIndex + 1)
+    }
+    when(push.fire) {
+      vec(headIndex) := push.payload
+      headIndex := (headIndex === depth - 1) ? U(0) | (headIndex + 1)
+    }
   }
 
   // implement test
+  SimConfig.compile{ SimpleFifo(3) }.doSim { dut =>
+    dut.push.valid #= false
+    dut.pop.ready #= false
+    // clock-related boilerplate
+    val cd = dut.clockDomain
+    cd.forkStimulus(10)
+    cd.waitSampling()
+    cd.assertReset()
+    cd.waitRisingEdge()
+    cd.deassertReset()
+    cd.waitSampling()
+    // fill queue
+    sleep(10)
+    dut.push.valid #= true
+    dut.push.payload #= 100
+    sleep(10)
+    dut.push.valid #= true
+    dut.push.payload #= 200
+    sleep(10)
+    dut.push.valid #= true
+    dut.push.payload #= 300
+    sleep(10)
+    dut.push.valid #= false
+    dut.pop.ready #= true
+    println(dut.pop.payload.toInt)
+    sleep(10)
+    dut.push.valid #= false
+    dut.pop.ready #= true
+    println(dut.pop.payload.toInt)
+  }
 }
 
 object MultiClient extends App {
