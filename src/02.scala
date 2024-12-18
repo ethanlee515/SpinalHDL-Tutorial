@@ -110,6 +110,7 @@ object OneClientStream extends App {
     val outputFired = Bool() init True
     val busy = counter =/= U(16)
     val sum = SInt(10 bits)
+    i.ready := ~busy
 
     when(i.valid & i.ready) {
       iBuffer := i.payload
@@ -152,6 +153,7 @@ object Ex3 extends App {
     val dataType = HardType(SInt(10 bits))
     val push = slave port Stream(dataType())
     val pop = master port Stream(dataType())
+    pop.m2sPipe()
 
     // implement a fifo
     // after implementation, see StreamFifo(dataType, depth = 10)
@@ -255,6 +257,10 @@ case class Complex(n: Int) extends Bundle {
   val r = SInt(n bits)
   val i = SInt(n bits)
 }
+// -1 <= x < 1
+// two's complement representation
+// 0.9999999 -> (1 << (n - 1)) - 1
+// -1 -> (1 << (n - 1))
 
 // used in following exercise 
 case class SimpleComplexMul(width: Int) extends Component {
@@ -321,6 +327,7 @@ object Ex4 extends App {
 
     val duration = Reg(UInt(spec.durWidth bits))
     val phase = Reg(Complex(spec.dataWidth))
+
     val loadTimer = Reg(UInt(4 bits))
 
     val complexMulDelay = 4
@@ -334,7 +341,7 @@ object Ex4 extends App {
 
     address := address + U(1)
     when(state === IDLE) {
-      when(cmd.fire) {
+      when(cmd.fire) { // for Stream, fire = valid & ready
         address := cmd.address
         duration := cmd.duration
         phase := cmd.phase
