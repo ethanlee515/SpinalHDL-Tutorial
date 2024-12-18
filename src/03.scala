@@ -66,7 +66,7 @@ object Ex5 extends App {
     // implement here
     val common, multr, multi = Payload(SInt(n bits))
     val node0, node1 = Node()
-    val links = List(StageLink(node0, node1))
+    val link = StageLink(node0, node1)
 
     new node0.Area {
       common := ((x.r - x.i) * y.i).resized
@@ -79,7 +79,7 @@ object Ex5 extends App {
       z.i := multi + common
     }
 
-    Builder(links)
+    Builder(link)
   }
   /* -- test here -- */
   // flexible parameters
