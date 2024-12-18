@@ -9,9 +9,7 @@ jenv global 17
 
 ```bash
 # ubuntu
-sudo apt install jenv openjdk@17
-jenv add
-jenv global 17
+echo 'export PATH="path-to-jdk-bin:$PATH"' >> ~/.bashrc
 ```
 
 ## install oss-cad-suite (include verilator)
