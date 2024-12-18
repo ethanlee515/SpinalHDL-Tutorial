@@ -4,6 +4,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.misc.pipeline._
+import scala.util.Random
 
 object NodePayloadDemo extends App {
   case class NodePayloadDemo() extends Component {
@@ -63,6 +64,69 @@ object Ex5 extends App {
     val z = out(Complex(n))
 
     // implement here
+    val common, multr, multi = Payload(SInt(n bits))
+    val node0, node1 = Node()
+    val links = List(StageLink(node0, node1))
+
+    new node0.Area {
+      common := ((x.r - x.i) * y.i).resized
+      multr := ((y.r - y.i) * x.r).resized
+      multi := ((y.r + y.i) * x.i).resized
+    }
+
+    new node1.Area {
+      z.r := multr + common
+      z.i := multi + common
+    }
+
+    Builder(links)
+  }
+  /* -- test here -- */
+  // flexible parameters
+  val nEvals = 4
+  // output verilog too
+  SpinalVerilog(ComplexMul(8))
+  // generate inputs
+  case class Cx(re: Int, im: Int)
+  val lst = List.fill(nEvals)((Cx(Random.nextInt(11) - 6, Random.nextInt(11) - 6), Cx(Random.nextInt(11) - 6, Random.nextInt(11) - 6)))
+  // run computation
+  var reference : List[Cx] = List()
+  var outcomes : List[Cx] = List()
+  SimConfig.compile { ComplexMul(8) }.doSim { dut =>
+    // clock boilerplate
+    val cd = dut.clockDomain
+    cd.forkStimulus(10)
+    cd.waitSampling()
+    cd.assertReset()
+    cd.waitRisingEdge()
+    cd.deassertReset()
+    cd.waitSampling()
+    sleep(10)
+    // run the actual simulation
+    for(i <- 0 until nEvals) {
+      val z1 = lst(i)._1
+      val z2 = lst(i)._2
+      val re = z1.re * z2.re - z1.im * z2.im
+      val im = z1.re * z2.im + z1.im * z2.re
+      reference = reference :+ Cx(re, im)
+      dut.x.r #= z1.re
+      dut.x.i #= z1.im
+      dut.y.r #= z2.re
+      dut.y.i #= z2.im
+      outcomes = outcomes :+ Cx(dut.z.r.toInt, dut.z.i.toInt)
+      sleep(10)
+    }
+    outcomes = outcomes.drop(1) :+ Cx(dut.z.r.toInt, dut.z.i.toInt)
+  }
+  // check output
+  for(i <- 0 until nEvals) {
+    val z1 = lst(i)._1
+    val z2 = lst(i)._2
+    val z1z2 = outcomes(i)
+    println(s"(${z1.re} + ${z1.im}i)(${z2.re} + ${z2.im}i) = ${z1z2.re} + ${z1z2.im}i")
+    if(z1z2 != reference(i)) {
+      println("wrong result!")
+    }
   }
 }
 
