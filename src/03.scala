@@ -283,7 +283,7 @@ object PipelineCpuDemo extends App {
   }
 
   SpinalVerilog(new Cpu())
-  // testing and sanity checks
+  /* -- simulate -- */
   SimConfig.compile { new Cpu() }.doSim { dut =>
     /* -- set up program -- */
     // add 5 to regfile
@@ -354,8 +354,48 @@ object Ex6_ModularPipelineCpuDemo extends App {
     import payloads._
     import decoder.logic._
     val logic = new execute.Area {
-        when(IS_ADD) {
+        when(IS_ADD & isValid) {
           regfile := regfile + U(INSTRUCTION(15 downto 8))
+        }
+    }
+  }
+
+  case class JumpHandler(stages: Stages, payloads: Payloads, fetcher: Fetcher, decoder: Decoder, flush: Bool) extends Area {
+    import stages._
+    import payloads._
+    import decoder.logic._
+    import fetcher.logic._
+    val logic = new execute.Area {
+        when(IS_JUMP & isValid) {
+          flush := True
+          pcReg := U(INSTRUCTION(15 downto 8))
+        }
+    }
+  }
+
+  case class LedHandler(stages: Stages, payloads: Payloads, decoder: Decoder, regfile: UInt, led: Bits) extends Area {
+    import stages._
+    import payloads._
+    import decoder.logic._
+    val logic = new execute.Area {
+        when(IS_LED & isValid) {
+          led := B(regfile)
+        }
+    }
+  }
+
+  case class DelayHandler(stages: Stages, payloads: Payloads, decoder: Decoder, delayCounter: UInt) extends Area {
+    import stages._
+    import payloads._
+    import decoder.logic._
+    val logic = new execute.Area {
+        when(IS_DELAY & isValid) {
+          delayCounter := delayCounter + 1
+          when(delayCounter === U(INSTRUCTION(15 downto 8))) {
+            delayCounter := 0
+          } otherwise {
+            execute.haltIt()
+          }
         }
     }
   }
@@ -368,19 +408,72 @@ object Ex6_ModularPipelineCpuDemo extends App {
     val f2d = StageLink(fetch.down, decode.up)
     val d2e = StageLink(decode.down, execute.up)
 
-
     val led = out(Reg(Bits(8 bits))) init (0)
     val fetcher = Fetcher(stages, payloads)
     val decoder = Decoder(stages, payloads)
     val regfile = Reg(UInt(8 bits)) init (0)
     val adder = Adder(stages, payloads, decoder, regfile)
+
+    val flush = False
+    for (stage <- List(fetch, decode)) {
+      stage.throwWhen(flush, usingReady = true)
+    }
+
+    val delayCounter = Reg(UInt(8 bits)) init (0)
     
     // implement other logic in this way
     // write some tests
+    val jump_handler = JumpHandler(stages, payloads, fetcher, decoder, flush)
+    val led_handler = LedHandler(stages, payloads, decoder, regfile, led)
+    val delay_handler = DelayHandler(stages, payloads, decoder, delayCounter)
 
     Builder(fetch, decode, execute, f2d, d2e)
   }
 
   SpinalVerilog(new Cpu())
+  /* -- simulate -- */
+  SimConfig.compile {
+    val dut = new Cpu() 
+    dut.regfile.simPublic
+    dut.stages.execute.down.valid.simPublic
+    dut
+  }.doSim { dut =>
+    /* -- set up program -- */
+    // add 2 to regfile
+    dut.fetcher.logic.mem.setBigInt(0, 0x0201)
+    // push regfile onto LED
+    dut.fetcher.logic.mem.setBigInt(1, 0x0003)
+    // add 3 to regfile
+    dut.fetcher.logic.mem.setBigInt(2, 0x0301)
+    // push regfile onto LED
+    dut.fetcher.logic.mem.setBigInt(3, 0x0003)
+    // add 4 to regfile
+    dut.fetcher.logic.mem.setBigInt(4, 0x0401)
+    // push regfile onto LED
+    dut.fetcher.logic.mem.setBigInt(5, 0x0003)
+    // delay 4 cycles
+    dut.fetcher.logic.mem.setBigInt(6, 0x0404)
+    // add 10 to regfile
+    dut.fetcher.logic.mem.setBigInt(7, 0x0a01)
+    // push regfile onto LED
+    dut.fetcher.logic.mem.setBigInt(8, 0x0003)
+    // jump to line 2
+    dut.fetcher.logic.mem.setBigInt(9, 0x0202)
+
+    /* -- clock boilerplate -- */
+    val cd = dut.clockDomain
+    cd.forkStimulus(10)
+    cd.waitSampling()
+    cd.assertReset()
+    cd.waitRisingEdge()
+    cd.deassertReset()
+    cd.waitSampling()
+    sleep(10)
+    /* -- run -- */ 
+    for(_ <- 0 until 50) {
+      println(s"valid = ${dut.stages.execute.down.valid.toBoolean}; regfile = ${dut.regfile.toInt}; LED = ${dut.led.toInt}")
+      sleep(10)
+    }
+  }
 
 }
