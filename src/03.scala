@@ -283,7 +283,32 @@ object PipelineCpuDemo extends App {
   }
 
   SpinalVerilog(new Cpu())
-
+  // testing and sanity checks
+  SimConfig.compile { new Cpu() }.doSim { dut =>
+    /* -- set up program -- */
+    // add 5 to regfile
+    dut.fetcher.mem.setBigInt(0, 0x0501)
+    // push regfile onto LED
+    dut.fetcher.mem.setBigInt(1, 0x0003)
+    // add 3 to regfile
+    dut.fetcher.mem.setBigInt(2, 0x0301)
+    // push regfile onto LED
+    dut.fetcher.mem.setBigInt(3, 0x0003)
+    /* -- clock boilerplate -- */
+    val cd = dut.clockDomain
+    cd.forkStimulus(10)
+    cd.waitSampling()
+    cd.assertReset()
+    cd.waitRisingEdge()
+    cd.deassertReset()
+    cd.waitSampling()
+    sleep(10)
+    /* -- run -- */ 
+    for(_ <- 0 until 20) {
+      println(s"LED = ${dut.led.toInt}")
+      sleep(10)
+    }
+  }
 }
 
 object Ex6_ModularPipelineCpuDemo extends App {
