@@ -265,7 +265,7 @@ object Ex6_ModularPipelineCpuDemo extends App {
     import payloads._
     import decoder.logic._
     val logic = new execute.Area {
-        when(IS_ADD) {
+        when(IS_ADD && isValid) {
           regfile := regfile + U(INSTRUCTION(15 downto 8))
         }
     }

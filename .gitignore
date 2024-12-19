@@ -3,3 +3,5 @@ out
 .bloop
 *.v
 simWorkspace
+.bsp
+.DS_Store

@@ -5,5 +5,6 @@
     "[scala]": {
         "editor.tabSize": 2
     },
-    "metals.millScript": "./mill"
+    "metals.millScript": "./mill",
+    "metals.defaultBspToBuildTool": true
 }
