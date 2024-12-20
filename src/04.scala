@@ -155,8 +155,6 @@ object CpuDemo extends App {
     }
   }
 
-  case class Opcode(code: MaskedLiteral) {}
-
   case class FetchPlugin() extends FiberPlugin {
     val logic = during setup new Area {
       val pp = host[PipelinePlugin]
@@ -177,6 +175,8 @@ object CpuDemo extends App {
       buildBefore.release()
     }
   }
+
+  case class Opcode(code: MaskedLiteral) {}
 
   case class DecoderPlugin() extends FiberPlugin {
     val defaultList = ArrayBuffer[(Payload[_ <: Data], Data)]()
@@ -202,7 +202,7 @@ object CpuDemo extends App {
       lock.await()
       val decLogic = new pp.decode.Area {
         for ((payload, value) <- defaultList) {
-          payload.assignFrom(value)
+          payload.assignFrom(value) // payload := valid
         }
         val defaultPayloads = (for ((payload, _) <- defaultList) yield payload).toList
         val decodePayloads = (for {
@@ -212,7 +212,7 @@ object CpuDemo extends App {
         val payloads = (defaultPayloads ++ decodePayloads).distinct
         for (payload <- payloads) {
           if (!defaultPayloads.contains(payload)) {
-            payload.assignDontCare()
+            // payload.assignDontCare()
           }
         }
 
@@ -280,16 +280,19 @@ object CpuDemo extends App {
 
       val aluLogic = new pp.execute.Area {
         val rs1Addr = INSTRUCTION(19 downto 15).asUInt
-        val rs2Addr = INSTRUCTION(11 downto 7).asUInt
+        val rs2Addr = INSTRUCTION(24 downto 20).asUInt
         rp.logic.readPort1.address := rs1Addr
         rp.logic.readPort2.address := rs2Addr
-        val src1 = rp.logic.readPort1.data.asSInt
-        val src2 = SRC2_CTRL.mux(rp.logic.readPort2.data.asSInt, INSTRUCTION(31 downto 20).asSInt.resized)
+        val rs1 = rp.logic.readPort1.data.asSInt
+        val src1 = rs1
+        val rs2 = rp.logic.readPort2.data.asSInt
+        val imm = INSTRUCTION(31 downto 20).asSInt.resized
+        val src2 = SRC2_CTRL.mux(imm, rs2)
         wp.WRITE_DATA := (src1 + src2).asBits
         when(SEL) {
           val writeRd = pp.write(INSTRUCTION)(11 downto 7).asUInt
           when(pp.write.isValid & pp.write(wp.SEL) & (rs1Addr === writeRd | rs2Addr === writeRd)) {
-            haltIt()
+            haltIt() // data hazard
           }
         }
       }
