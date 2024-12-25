@@ -223,6 +223,50 @@ class Parser(tokens: List[Token]) {
   }
 }
 
+class Interpreter (instructions : List[Instruction]) {
+  val regs = Array.fill(32)(0)
+  val ram = Array.fill(256)(0)
+  var pc = 0
+  var done = false
+
+  def interpret_add(add : Add) {
+    if(add.rd != 0) {
+      regs(add.rd) = regs(add.rs1) + regs(add.rs2)
+    }
+  }
+  def interpret_addi(addi : Addi) {
+    if(addi.rd != 0) {
+      regs(addi.rd) = regs(addi.rs1) + addi.imm
+    }
+  }
+  def interpret_sub(sub : Sub) {
+
+  }
+  def interpret_ecall() {
+    done = true
+  }
+
+  // maybe more prudent to use `fuel` too
+  // but I am not prudent
+  while(!done) {
+    val instruction = instructions(pc)
+    pc += 1
+    instruction match {
+      case add: Add => interpret_add(add)
+      case addi: Addi => interpret_addi(addi)
+      case sub: Sub => interpret_sub(sub)
+      case ecall: Ecall => interpret_ecall()
+      case _ => {
+        throw new RuntimeException(s"Interpreter encountered unknown instruction.")
+      }
+    }
+  }
+
+  def getOutput() : Integer = {
+    return regs(10)
+  }
+}
+
 object Main extends App {
   if(args.length != 1) {
     println("usage: mill t.runMain riscv.Main filename.s")
@@ -230,8 +274,7 @@ object Main extends App {
   }
   val program = io.Source.fromFile(args(0)).mkString
   val tokenizer = new Tokenizer(program)
-  println(tokenizer.tokens)
   val parser = new Parser(tokenizer.tokens)
-  println(parser.instructions)
-
+  val interpreter = new Interpreter(parser.instructions)
+  println(interpreter.getOutput())
 }
