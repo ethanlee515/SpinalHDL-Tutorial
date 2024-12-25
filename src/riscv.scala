@@ -1,7 +1,7 @@
 package riscv
 
 object RiscV {
-  val instructions = List("add", "addi", "sub", "lw", "sw", "beq")
+  val instructions = List("add", "addi", "sub", "lw", "sw", "beq", "ecall")
   val register_names = List("zero", "ra", "sp", "gp", "tp",
     "t0", "t1", "t2", "fp", "s1",
     "a0", "a1","a2", "a3", "a4", "a5", "a6", "a7",
@@ -43,6 +43,7 @@ class Sub(val rd : Integer, val rs1 : Integer, val rs2 : Integer) extends Instru
 class Lw(val rd : Integer, val offset : Integer, val rs1 : Integer) extends Instruction
 class Sw(val rs2 : Integer, val offset : Integer, val rs1 : Integer) extends Instruction
 class Beq(val rs1 : Integer, val rs2 : Integer, val offset : Integer) extends Instruction
+class Ecall extends Instruction
 
 class Tokenizer(program : String) {
   import RiscV._
@@ -112,8 +113,20 @@ class Parser(tokens: List[Token]) {
     }
   }
 
-  def matchAdd() = {
-    
+  def matchRegister() : Integer = {
+    val result = tokens(loc).getRegisterNumber
+    loc += 1
+    return result
+  }
+
+  def matchAdd() : Add = {
+    matchToken("add")
+    val rd = matchRegister()
+    matchToken(",")
+    val rs1 = matchRegister()
+    matchToken(",")
+    val rs2 = matchRegister()
+    return new Add(rd, rs1, rs2)
   }
 
   def matchAddi() : Addi = {
@@ -126,26 +139,51 @@ class Parser(tokens: List[Token]) {
     return new Addi(rd, rs1, imm)
   }
 
-  def matchRegister() : Integer = {
-    val result = tokens(loc).getRegisterNumber
-    loc += 1
-    return result
+  def matchSub() : Sub = {
+    matchToken("sub")
+    val rd = matchRegister()
+    matchToken(",")
+    val rs1 = matchRegister()
+    matchToken(",")
+    val rs2 = matchRegister()
+    return new Sub(rd, rs1, rs2)
   }
 
-  def match_sub() = {
-
+  def matchLw() : Lw = {
+    matchToken("lw")
+    val rd = matchRegister()
+    matchToken(",")
+    val offset = matchConstant()
+    matchToken("(")
+    val rs1 = matchRegister()
+    matchToken(")")
+    return new Lw(rd, offset, rs1)
   }
 
-  def match_lw() = {
-
+  def matchSw() : Sw = {
+    matchToken("sw")
+    val rs2 = matchRegister()
+    matchToken(",")
+    val offset = matchConstant()
+    matchToken("(")
+    val rs1 = matchRegister()
+    matchToken(")")
+    return new Sw(rs2, offset, rs1)
   }
 
-  def match_sw() = {
-
+  def matchBeq() : Beq = {
+    matchToken("beq")
+    val rs1 = matchRegister()
+    matchToken(",")
+    val rs2 = matchRegister()
+    matchToken(",")
+    val offset = matchConstant()
+    return new Beq(rs1, rs2, offset)
   }
 
-  def match_beq() = {
-
+  def matchEcall() : Ecall = {
+    matchToken("ecall")
+    return new Ecall()
   }
 
   def matchInstruction() : Instruction = {
@@ -154,8 +192,26 @@ class Parser(tokens: List[Token]) {
       case "addi" => {
         return matchAddi()
       }
+      case "add" => {
+        return matchAdd()
+      }
+      case "sub" => {
+        return matchSub()
+      }
+      case "lw" => {
+        return matchLw()
+      }
+      case "sw" => {
+        return matchSw()
+      }
+      case "beq" => {
+        return matchBeq()
+      }
+      case "ecall" => {
+        return matchEcall()
+      }
       case _ => {
-        throw new RuntimeException("NYI")
+        throw new RuntimeException(s"instruction expected, seen ${token.content}.")
       }
     }
   }
@@ -168,7 +224,12 @@ class Parser(tokens: List[Token]) {
 }
 
 object Main extends App {
-  val tokenizer = new Tokenizer("addi ra, t0, 15 addi t1, t2, -19")
+  if(args.length != 1) {
+    println("usage: mill t.runMain riscv.Main filename.s")
+    System.exit(0)
+  }
+  val program = io.Source.fromFile(args(0)).mkString
+  val tokenizer = new Tokenizer(program)
   println(tokenizer.tokens)
   val parser = new Parser(tokenizer.tokens)
   println(parser.instructions)
