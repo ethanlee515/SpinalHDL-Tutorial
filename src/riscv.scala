@@ -223,11 +223,13 @@ class Parser(tokens: List[Token]) {
   }
 }
 
-class Interpreter (instructions : List[Instruction]) {
+class Interpreter (instructions : List[Instruction], x : Integer) {
   val regs = Array.fill(32)(0)
   val ram = Array.fill(256)(0)
   var pc = 0
   var done = false
+
+  regs(10) = x
 
   def interpret_add(add : Add) {
     if(add.rd != 0) {
@@ -240,8 +242,25 @@ class Interpreter (instructions : List[Instruction]) {
     }
   }
   def interpret_sub(sub : Sub) {
-
+    if(sub.rd != 0) {
+      regs(sub.rd) = regs(sub.rs1) - regs(sub.rs2)
+    }
   }
+
+  def interpret_lw(lw : Lw) {
+    regs(lw.rd) = ram(regs(lw.rs1) + lw.offset)
+  }
+
+  def interpret_sw(sw : Sw) {
+    ram(regs(sw.rs1) + sw.offset) = regs(sw.rs2)
+  }
+
+  def interpret_beq(beq : Beq) {
+    if(regs(beq.rs1) == regs(beq.rs2)) {
+      pc += beq.offset
+    }
+  }
+
   def interpret_ecall() {
     done = true
   }
@@ -256,6 +275,7 @@ class Interpreter (instructions : List[Instruction]) {
       case addi: Addi => interpret_addi(addi)
       case sub: Sub => interpret_sub(sub)
       case ecall: Ecall => interpret_ecall()
+      case beq: Beq => interpret_beq(beq)
       case _ => {
         throw new RuntimeException(s"Interpreter encountered unknown instruction.")
       }
@@ -268,13 +288,14 @@ class Interpreter (instructions : List[Instruction]) {
 }
 
 object Main extends App {
-  if(args.length != 1) {
-    println("usage: mill t.runMain riscv.Main filename.s")
+  if(args.length != 1 && args.length != 2) {
+    println("usage: mill t.runMain riscv.Main filename.s x")
     System.exit(0)
   }
   val program = io.Source.fromFile(args(0)).mkString
   val tokenizer = new Tokenizer(program)
   val parser = new Parser(tokenizer.tokens)
-  val interpreter = new Interpreter(parser.instructions)
+  val x = if (args.length == 1) 0 else args(1).toInt
+  val interpreter = new Interpreter(parser.instructions, x)
   println(interpreter.getOutput())
 }
