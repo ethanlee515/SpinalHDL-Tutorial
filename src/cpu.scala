@@ -1,4 +1,4 @@
-package plugin
+package riscv
 
 import spinal.core._
 import spinal.core.sim._
@@ -8,10 +8,14 @@ import spinal.lib.misc.plugin._
 import spinal.core.fiber._
 
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap}
+import scala.io
 
-object Cpu {
+class Cpu extends Component {
   val INSTRUCTION = Payload(Bits(32 bits))
   val PC = Payload(UInt(32 bits))
+  val mem = Mem.fill(256)(INSTRUCTION)
+  mem.simPublic
+  val done = out(Reg(Bool())) init(False)
 
   case class PipelinePlugin() extends FiberPlugin {
     val fetch, decode, execute, write = CtrlLink()
@@ -42,8 +46,7 @@ object Cpu {
         when(up.isFiring) {
           pcReg := PC + U(4)
         }
-
-        val mem = Mem.fill(256)(INSTRUCTION)
+        //val mem = Mem.fill(256)(INSTRUCTION)
         INSTRUCTION := mem.readAsync((PC >> 2).resized)
       }
       buildBefore.release()
@@ -86,7 +89,7 @@ object Cpu {
         val payloads = (defaultPayloads ++ decodePayloads).distinct
         for (payload <- payloads) {
           if (!defaultPayloads.contains(payload)) {
-            // payload.assignDontCare()
+            payload.assignDontCare()
           }
         }
 
@@ -101,9 +104,13 @@ object Cpu {
       buildBefore.release()
     }
   }
+
+  val regfile = Mem.fill(32)(Bits(32 bits))
+  regfile.simPublic
+
   case class RegfilePlugin() extends FiberPlugin {
     val logic = during setup new Area {
-      val regfile = Mem.fill(32)(Bits(32 bits))
+      //val regfile = Mem.fill(32)(Bits(32 bits))
       val readPort1 = regfile.readAsyncPort()
       val readPort2 = regfile.readAsyncPort()
       val writePort = regfile.writePort()
@@ -175,22 +182,73 @@ object Cpu {
     }
   }
 
-  case class Main(plugins: Seq[FiberPlugin]) extends Component {
-    val host = new PluginHost()
-    host.asHostOf(plugins)
+  case class OutputPlugin() extends FiberPlugin {
+    val logic = during setup new Area {
+      val ecallOp = Opcode(M"00000000000000000000000001110011")
+      val OUTSEL = Payload(Bool())
+      val dp = host[DecoderPlugin]
+      val pp = host[PipelinePlugin]
+      val buildBefore = retains(dp.lock)
+      awaitBuild()
+      dp.addDefault(OUTSEL, False)
+      dp.addDecoding(ecallOp, OUTSEL, True)
+      val outputLogic = new pp.execute.Area {
+        when(OUTSEL) {
+          done := True
+        }
+      }
+      buildBefore.release()
+    }
   }
 
-  def getPlugins() = {
-    val plugins = ArrayBuffer[FiberPlugin]()
-    plugins += PipelinePlugin()
-    plugins += FetchPlugin()
-    plugins += DecoderPlugin()
-    plugins += RegfilePlugin()
-    plugins += WriteBackPlugin()
-    plugins += AluPlugin()
-  }
+  val plugins = List(PipelinePlugin(),
+    FetchPlugin(),
+    DecoderPlugin(),
+    RegfilePlugin(),
+    WriteBackPlugin(),
+    AluPlugin(),
+    OutputPlugin())
+
+  val host = new PluginHost()
+  host.asHostOf(plugins)
 }
 
 object CpuTest extends App {
+  if(!List(1, 2).contains(args.length)) {
+    println("usage: mill t.runMain riscv.CpuTest filename.s x")
+    System.exit(0)
+  }
+  val program = io.Source.fromFile(args(0)).mkString
+  val tokenizer = new Tokenizer(program)
+  val parser = new Parser(tokenizer.tokens)
+  val assembler = new Assembler(parser.instructions)
 
+  SimConfig.compile { new Cpu }.doSim { dut =>
+    /* -- set up program -- */
+    for(i <- 0 until assembler.binary.length) {
+      dut.mem.setBigInt(i, BigInt(assembler.binary(i)))
+    }
+    // TODO set input register using args(1)
+    /* -- clock boilerplate -- */
+    val cd = dut.clockDomain
+    cd.forkStimulus(10)
+    cd.waitSampling()
+    cd.assertReset()
+    cd.waitRisingEdge()
+    cd.deassertReset()
+    cd.waitSampling()
+    sleep(10)
+    /* -- run -- */ 
+    var fuel = 50
+    while(!dut.done.toBoolean && fuel > 0) {
+    // while(fuel > 0) {
+      sleep(10)
+      fuel -= 1
+    }
+    if(fuel == 0) {
+      println("out of fuel?")
+    } else {
+      println(s"output = ${dut.regfile.getBigInt(10)}")
+    }
+  }
 }
