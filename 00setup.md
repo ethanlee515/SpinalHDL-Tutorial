@@ -2,6 +2,8 @@
 ```bash
 # macos
 brew install jenv
+echo '\nexport PATH="$HOME/.jenv/bin:$PATH"\neval "$(jenv init -)"\n' >> ~/.zshrc
+# restart terminal
 brew install openjdk@17
 jenv add /opt/homebrew/Cellar/openjdk@17/17.0.13/libexec/openjdk.jdk/Contents/Home
 jenv global 17
