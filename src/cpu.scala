@@ -28,7 +28,7 @@ class Cpu extends Component {
       for (stage <- List(fetch, decode)) {
         stage.throwWhen(flush, usingReady = true)
       }
-      val links = List(fetch, decode, execute, StageLink(fetch.down, decode.up), StageLink(decode.down, execute.up))
+      val links = List(fetch, decode, execute, write, StageLink(fetch.down, decode.up), StageLink(decode.down, execute.up), StageLink(execute.down, write.up))
       Builder(links)
     }
   }
@@ -188,6 +188,7 @@ class Cpu extends Component {
       val OUTSEL = Payload(Bool())
       val dp = host[DecoderPlugin]
       val pp = host[PipelinePlugin]
+      //val wp = host[WriteBackPlugin]
       val buildBefore = retains(dp.lock)
       awaitBuild()
       dp.addDefault(OUTSEL, False)
