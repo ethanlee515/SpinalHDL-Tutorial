@@ -1,5 +1,11 @@
 package riscv
 
+import spinal.core._
+import spinal.core.sim._
+import spinal.lib._
+import spinal.lib.misc.pipeline._
+import scala.io
+
 object RiscV {
   val instructions = List("add", "addi", "sub", "lw", "sw", "beq", "ecall")
   val register_names = List("zero", "ra", "sp", "gp", "tp",
@@ -287,7 +293,53 @@ class Interpreter (instructions : List[Instruction], x : Integer) {
   }
 }
 
-object Main extends App {
+class Assembler (instructions : List[Instruction]) {
+
+  def assemble_add(add : Add) : Integer = {
+    return (b"110011") + (add.rd << 7) + (add.rs1 << 15) + (add.rs2 << 20)
+  }
+
+  def assemble_addi(addi : Addi) : Integer = {
+    return b"10011" + (addi.rd << 7) + (addi.rs1 << 15) + ((addi.imm & 0xFFF) << 20)
+  }
+
+  def assemble_sub(sub : Sub) : Integer = {
+    // TODO
+    return 0
+  }
+
+  def assemble_ecall() : Integer = {
+    return b"1110011"
+  }
+
+  def assemble_beq(beq : Beq) : Integer = {
+    // TODO
+    return 0
+  }
+
+  def assemble_instruction(instruction : Instruction) : Integer = {
+    instruction match {
+      case add: Add => {
+        return assemble_add(add)
+      }
+      case addi: Addi => {
+        return assemble_addi(addi)
+      }
+      // case sub: Sub => interpret_sub(sub)
+      case ecall: Ecall => {
+        return assemble_ecall()
+      }
+      // case beq: Beq => interpret_beq(beq)
+      case _ => {
+        throw new RuntimeException(s"Assembler encountered unknown instruction.")
+      }
+    }
+  }
+
+  val binary = instructions.map(assemble_instruction)
+}
+
+object Interpret extends App {
   if(args.length != 1 && args.length != 2) {
     println("usage: mill t.runMain riscv.Main filename.s x")
     System.exit(0)
@@ -299,3 +351,12 @@ object Main extends App {
   val interpreter = new Interpreter(parser.instructions, x)
   println(interpreter.getOutput())
 }
+
+object Assemble extends App {
+  val program = io.Source.fromFile(args(0)).mkString
+  val tokenizer = new Tokenizer(program)
+  val parser = new Parser(tokenizer.tokens)
+  val assembler = new Assembler(parser.instructions)
+  println(assembler.binary)
+}
+
