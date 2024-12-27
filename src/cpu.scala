@@ -9,133 +9,7 @@ import spinal.core.fiber._
 
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap}
 
-object AreaDemo extends App {
-  case class Multiplier() extends Component {
-    val x = in SInt (16 bits)
-    val y = in SInt (16 bits)
-    val z = out SInt (32 bits)
-    z := x * y
-  }
-
-  case class AreaDemo() extends Component {
-    val i = in SInt (16 bits)
-    val o = out SInt (16 bits)
-
-    val multByFive = new Area {
-      val multiplier = Multiplier()
-      multiplier.x := i
-      multiplier.y := S(5, 16 bits)
-      val res = Reg(SInt(16 bits))
-      res := multiplier.z.resized
-    }
-
-    o := multByFive.res
-  }
-
-  SpinalVerilog(AreaDemo())
-}
-
-object SimplePlugin extends App {
-  case class InPlugin() extends FiberPlugin {
-    val logic = during setup new Area {
-      val width = 16
-      awaitBuild()
-      val i = in(UInt(16 bits))
-    }
-  }
-  case class OutPlugin() extends FiberPlugin {
-    val logic = during setup new Area {
-      awaitBuild()
-      val inPlugin = host[InPlugin]
-      val width = inPlugin.logic.width
-      val o = out(UInt(width bits))
-
-      o := inPlugin.logic.i
-    }
-  }
-  case class SimplePlugin(plugins: Seq[FiberPlugin]) extends Component {
-    val host = new PluginHost()
-    host.asHostOf(plugins)
-  }
-
-  def getPlugins() = List(InPlugin(), OutPlugin())
-  SpinalVerilog {
-    SimplePlugin(getPlugins())
-  }
-
-  // equivalent to
-  case class SimplePlugin1() extends Component {
-    val inPlugin = new Area {
-      val logic = new Area {
-        val i = in(UInt(16 bits))
-      }
-    }
-    val outPlugin = new Area {
-      val logic = new Area {
-        val o = out(UInt(16 bits))
-        o := inPlugin.logic.i
-      }
-    }
-  }
-  SpinalVerilog(SimplePlugin1())
-
-}
-
-object RetainerDemo extends App {
-  case class StatePlugin() extends FiberPlugin {
-    val logic = during setup new Area {
-      awaitBuild()
-      val signal = Reg(UInt(32 bits))
-    }
-  }
-
-  case class DriverPlugin() extends FiberPlugin {
-    // incrementBy will be set by others plugin at elaboration time
-    var incrementBy = 0
-    // retainer allows other plugins to create locks, on which this plugin will wait before using incrementBy
-    val retainer = Retainer()
-
-    val logic = during setup new Area {
-      awaitBuild()
-      val sp = host[StatePlugin].logic.get
-      retainer.await()
-
-      // Generate the incrementer hardware
-      sp.signal := sp.signal + U(incrementBy)
-    }
-  }
-
-  // Let's define a plugin which will modify the DriverPlugin.incrementBy variable because letting it elaborate its hardware
-  case class SetupPlugin() extends FiberPlugin {
-    // during setup { body } will spawn the body of code in the Fiber setup phase (it is before the Fiber build phase)
-    val logic = during setup new Area {
-      // *** Setup phase code ***
-      val dp = host[DriverPlugin]
-
-      // Prevent the DriverPlugin from executing its build's body (until release() is called)
-      val lock = dp.retainer()
-      // Wait until the fiber phase reached build phase
-      awaitBuild()
-
-      // *** Build phase code ***
-      // Let's mutate DriverPlugin.incrementBy
-      dp.incrementBy += 1
-
-      // Allows the DriverPlugin to execute its build's body
-      lock.release()
-    }
-  }
-
-  case class RetainerTop(plugins: Seq[FiberPlugin]) extends Component {
-    val host = new PluginHost()
-    host.asHostOf(plugins)
-  }
-
-  def getPlugins() = List(StatePlugin(), DriverPlugin(), SetupPlugin())
-  SpinalVerilog { RetainerTop(getPlugins()) }
-}
-
-object CpuDemo extends App {
+object Cpu {
   val INSTRUCTION = Payload(Bits(32 bits))
   val PC = Payload(UInt(32 bits))
 
@@ -301,7 +175,7 @@ object CpuDemo extends App {
     }
   }
 
-  case class Cpu(plugins: Seq[FiberPlugin]) extends Component {
+  case class Main(plugins: Seq[FiberPlugin]) extends Component {
     val host = new PluginHost()
     host.asHostOf(plugins)
   }
@@ -315,10 +189,8 @@ object CpuDemo extends App {
     plugins += WriteBackPlugin()
     plugins += AluPlugin()
   }
-
-  SpinalVerilog(Cpu(getPlugins()))
 }
 
-object Ex7 extends App {
+object CpuTest extends App {
 
 }
