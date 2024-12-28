@@ -295,29 +295,29 @@ class Interpreter (instructions : List[Instruction], x : Integer) {
 
 class Assembler (instructions : List[Instruction]) {
 
-  def assemble_add(add : Add) : Integer = {
-    return (b"110011") + (add.rd << 7) + (add.rs1 << 15) + (add.rs2 << 20)
+  def assemble_add(add : Add) : BigInt = {
+    return (b"110011") + (add.rd << 7) + (add.rs1 << 15) + (BigInt(add.rs2) << 20)
   }
 
-  def assemble_addi(addi : Addi) : Integer = {
-    return b"10011" + (addi.rd << 7) + (addi.rs1 << 15) + ((addi.imm & 0xFFF) << 20)
+  def assemble_addi(addi : Addi) : BigInt = {
+    return b"10011" + (addi.rd << 7) + (addi.rs1 << 15) + (BigInt(addi.imm & 0xFFF) << 20)
   }
 
-  def assemble_sub(sub : Sub) : Integer = {
+  def assemble_sub(sub : Sub) : BigInt = {
     // TODO
     return 0
   }
 
-  def assemble_ecall() : Integer = {
+  def assemble_ecall() : BigInt = {
     return b"1110011"
   }
 
-  def assemble_beq(beq : Beq) : Integer = {
+  def assemble_beq(beq : Beq) : BigInt = {
     // TODO
     return 0
   }
 
-  def assemble_instruction(instruction : Instruction) : Integer = {
+  def assemble_instruction(instruction : Instruction) : BigInt = {
     instruction match {
       case add: Add => {
         return assemble_add(add)
@@ -352,6 +352,7 @@ object Interpret extends App {
   println(interpreter.getOutput())
 }
 
+/*
 object Assemble extends App {
   val program = io.Source.fromFile(args(0)).mkString
   val tokenizer = new Tokenizer(program)
@@ -359,4 +360,4 @@ object Assemble extends App {
   val assembler = new Assembler(parser.instructions)
   println(assembler.binary)
 }
-
+*/

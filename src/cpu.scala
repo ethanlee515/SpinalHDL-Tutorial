@@ -25,7 +25,8 @@ class Cpu extends Component {
       for (stage <- List(fetch, decode)) {
         stage.throwWhen(flush, usingReady = true)
       }
-      val links = List(fetch, decode, execute, write, StageLink(fetch.down, decode.up), StageLink(decode.down, execute.up), StageLink(execute.down, write.up))
+      val links = List(fetch, decode, execute, write,
+        StageLink(fetch.down, decode.up), StageLink(decode.down, execute.up), StageLink(execute.down, write.up))
       Builder(links)
     }
   }
@@ -42,7 +43,6 @@ class Cpu extends Component {
       val pp = host[PipelinePlugin]
       val mp = host[MemPlugin]
       val buildBefore = retains(pp.lock)
-
       awaitBuild()
       val fetchLogic = new pp.fetch.Area {
         val pcReg = Reg(PC) init (0)
@@ -186,19 +186,35 @@ class Cpu extends Component {
     }
   }
 
+  /*
+  case class JumpHandler() extends FiberPlugin {
+    val logic = {
+      val opcode = Opcode(M"-----------------001-----1100011")
+      val SEL = Payload(Bool())
+      val dp = host[DecoderPlugin]
+      val pp = host[PipelinePlugin]
+      val buildBefore = retains(dp.lock)
+      when(IS_JUMP & isValid) {
+        flush := True
+        pcReg := U(INSTRUCTION(15 downto 8))
+      }
+    }
+  }
+  */
+
   case class OutputPlugin() extends FiberPlugin {
     val logic = during setup new Area {
       val done = out(Reg(Bool())) init(False)
       val ecallOp = Opcode(M"00000000000000000000000001110011")
-      val OUTSEL = Payload(Bool())
+      val SEL = Payload(Bool())
       val dp = host[DecoderPlugin]
       val pp = host[PipelinePlugin]
       val buildBefore = retains(dp.lock)
       awaitBuild()
-      dp.addDefault(OUTSEL, False)
-      dp.addDecoding(ecallOp, OUTSEL, True)
+      dp.addDefault(SEL, False)
+      dp.addDecoding(ecallOp, SEL, True)
       val outputLogic = new pp.execute.Area {
-        when(OUTSEL) {
+        when(SEL) {
           done := True
         }
       }
@@ -208,9 +224,6 @@ class Cpu extends Component {
 
   case class WhiteboxerPlugin() extends FiberPlugin {
     val logic = during setup new Area {
-      // TODO why is the lock here?
-      val pp = host[PipelinePlugin]
-      val buildBefore = retains(pp.lock)
       awaitBuild()
       val mp = host[MemPlugin]
       val mem = mp.logic.mem
@@ -221,7 +234,6 @@ class Cpu extends Component {
       val rp = host[RegfilePlugin]
       val regfile = rp.logic.regfile
       regfile.simPublic()
-      buildBefore.release()
     }
   }
 
@@ -253,8 +265,7 @@ object CpuTest extends App {
   SimConfig.compile { new Cpu }.doSim { dut =>
     /* -- set up program -- */
     for(i <- 0 until assembler.binary.length) {
-      // TODO this will overflow and ruin my day
-      dut.whitebox.logic.mem.setBigInt(i, BigInt(assembler.binary(i)))
+      dut.whitebox.logic.mem.setBigInt(i, assembler.binary(i))
     }
     val x = if (args.length == 2) args(1).toInt else 0
     dut.whitebox.logic.regfile.setBigInt(0, 0)
@@ -269,7 +280,7 @@ object CpuTest extends App {
     cd.waitSampling()
     sleep(10)
     /* -- run -- */ 
-    var fuel = 50
+    var fuel = 200
     while(!dut.whitebox.logic.done.toBoolean && fuel > 0) {
       sleep(10)
       fuel -= 1
