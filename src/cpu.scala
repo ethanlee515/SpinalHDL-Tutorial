@@ -13,9 +13,6 @@ import scala.io
 class Cpu extends Component {
   val INSTRUCTION = Payload(Bits(32 bits))
   val PC = Payload(UInt(32 bits))
-  val mem = Mem.fill(256)(INSTRUCTION)
-  mem.simPublic
-  val done = out(Reg(Bool())) init(False)
 
   case class PipelinePlugin() extends FiberPlugin {
     val fetch, decode, execute, write = CtrlLink()
@@ -33,9 +30,17 @@ class Cpu extends Component {
     }
   }
 
+  case class MemPlugin() extends FiberPlugin {
+    val logic = during setup new Area {
+      val mem = Mem.fill(256)(INSTRUCTION)
+      val iBusPort = mem.readAsyncPort() // port for fetching instructions
+    }
+  }
+
   case class FetchPlugin() extends FiberPlugin {
     val logic = during setup new Area {
       val pp = host[PipelinePlugin]
+      val mp = host[MemPlugin]
       val buildBefore = retains(pp.lock)
 
       awaitBuild()
@@ -46,8 +51,10 @@ class Cpu extends Component {
         when(up.isFiring) {
           pcReg := PC + U(4)
         }
-        //val mem = Mem.fill(256)(INSTRUCTION)
-        INSTRUCTION := mem.readAsync((PC >> 2).resized)
+        val memPort = mp.logic.iBusPort
+        val addr = (PC >> 2)
+        memPort.address := addr.resized
+        INSTRUCTION := memPort.data
       }
       buildBefore.release()
     }
@@ -105,12 +112,9 @@ class Cpu extends Component {
     }
   }
 
-  val regfile = Mem.fill(32)(Bits(32 bits))
-  regfile.simPublic
-
   case class RegfilePlugin() extends FiberPlugin {
     val logic = during setup new Area {
-      //val regfile = Mem.fill(32)(Bits(32 bits))
+      val regfile = Mem.fill(32)(Bits(32 bits))
       val readPort1 = regfile.readAsyncPort()
       val readPort2 = regfile.readAsyncPort()
       val writePort = regfile.writePort()
@@ -184,11 +188,11 @@ class Cpu extends Component {
 
   case class OutputPlugin() extends FiberPlugin {
     val logic = during setup new Area {
+      val done = out(Reg(Bool())) init(False)
       val ecallOp = Opcode(M"00000000000000000000000001110011")
       val OUTSEL = Payload(Bool())
       val dp = host[DecoderPlugin]
       val pp = host[PipelinePlugin]
-      //val wp = host[WriteBackPlugin]
       val buildBefore = retains(dp.lock)
       awaitBuild()
       dp.addDefault(OUTSEL, False)
@@ -202,13 +206,35 @@ class Cpu extends Component {
     }
   }
 
+  case class WhiteboxerPlugin() extends FiberPlugin {
+    val logic = during setup new Area {
+      // TODO why is the lock here?
+      val pp = host[PipelinePlugin]
+      val buildBefore = retains(pp.lock)
+      awaitBuild()
+      val mp = host[MemPlugin]
+      val mem = mp.logic.mem
+      mem.simPublic()
+      val op = host[OutputPlugin]
+      val done = op.logic.done
+      done.simPublic()
+      val rp = host[RegfilePlugin]
+      val regfile = rp.logic.regfile
+      regfile.simPublic()
+      buildBefore.release()
+    }
+  }
+
+  val whitebox = WhiteboxerPlugin()
   val plugins = List(PipelinePlugin(),
+    MemPlugin(),
     FetchPlugin(),
     DecoderPlugin(),
     RegfilePlugin(),
     WriteBackPlugin(),
     AluPlugin(),
-    OutputPlugin())
+    OutputPlugin(),
+    whitebox)
 
   val host = new PluginHost()
   host.asHostOf(plugins)
@@ -227,9 +253,12 @@ object CpuTest extends App {
   SimConfig.compile { new Cpu }.doSim { dut =>
     /* -- set up program -- */
     for(i <- 0 until assembler.binary.length) {
-      dut.mem.setBigInt(i, BigInt(assembler.binary(i)))
+      // TODO this will overflow and ruin my day
+      dut.whitebox.logic.mem.setBigInt(i, BigInt(assembler.binary(i)))
     }
-    // TODO set input register using args(1)
+    val x = if (args.length == 2) args(1).toInt else 0
+    dut.whitebox.logic.regfile.setBigInt(0, 0)
+    dut.whitebox.logic.regfile.setBigInt(10, BigInt(x))
     /* -- clock boilerplate -- */
     val cd = dut.clockDomain
     cd.forkStimulus(10)
@@ -241,15 +270,14 @@ object CpuTest extends App {
     sleep(10)
     /* -- run -- */ 
     var fuel = 50
-    while(!dut.done.toBoolean && fuel > 0) {
-    // while(fuel > 0) {
+    while(!dut.whitebox.logic.done.toBoolean && fuel > 0) {
       sleep(10)
       fuel -= 1
     }
     if(fuel == 0) {
       println("out of fuel?")
     } else {
-      println(s"output = ${dut.regfile.getBigInt(10)}")
+      println(s"output = ${dut.whitebox.logic.regfile.getBigInt(10)}")
     }
   }
 }
