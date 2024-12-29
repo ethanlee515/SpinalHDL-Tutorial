@@ -263,7 +263,7 @@ class Interpreter (instructions : List[Instruction], x : Integer) {
 
   def interpret_beq(beq : Beq) {
     if(regs(beq.rs1) == regs(beq.rs2)) {
-      pc += beq.offset
+      pc += beq.offset / 4 - 1
     }
   }
 
@@ -351,13 +351,3 @@ object Interpret extends App {
   val interpreter = new Interpreter(parser.instructions, x)
   println(interpreter.getOutput())
 }
-
-/*
-object Assemble extends App {
-  val program = io.Source.fromFile(args(0)).mkString
-  val tokenizer = new Tokenizer(program)
-  val parser = new Parser(tokenizer.tokens)
-  val assembler = new Assembler(parser.instructions)
-  println(assembler.binary)
-}
-*/
