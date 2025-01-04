@@ -16,11 +16,12 @@ class Cpu extends Component {
 
   case class PipelinePlugin() extends FiberPlugin {
     val fetch, decode, execute, write = CtrlLink()
+    // TODO maybe `flush` should be in an area?
+    // Gives errors about circular stuff though.
+    val flush = False
     val lock = Retainer()
     val logic = during setup new Area {
       awaitBuild()
-      val flush = False
-
       lock.await()
       for (stage <- List(fetch, decode)) {
         stage.throwWhen(flush, usingReady = true)
@@ -50,10 +51,11 @@ class Cpu extends Component {
         up.valid := True
         when(up.isFiring) {
           pcReg := PC + U(4)
-        }
+       }
         val memPort = mp.logic.iBusPort
         val addr = (PC >> 2)
         memPort.address := addr.resized
+        // INSTRUCTION := isValid ? memPort.data | (U"00000000000000000000000000010011").asBits //no-op
         INSTRUCTION := memPort.data
       }
       buildBefore.release()
@@ -86,7 +88,7 @@ class Cpu extends Component {
       lock.await()
       val decLogic = new pp.decode.Area {
         for ((payload, value) <- defaultList) {
-          payload.assignFrom(value) // payload := valid
+          payload.assignFrom(value)
         }
         val defaultPayloads = (for ((payload, _) <- defaultList) yield payload).toList
         val decodePayloads = (for {
@@ -140,6 +142,23 @@ class Cpu extends Component {
     }
   }
 
+  // Maybe need this?
+  // Otherwise AluPlugin and BeqHandler both reads...
+  case class RegistersReader() extends FiberPlugin {
+    val logic = during build new Area {
+      val pp = host[PipelinePlugin]
+      val rp = host[RegfilePlugin]
+      val reader = new pp.execute.Area {
+        val rs1Addr = INSTRUCTION(19 downto 15).asUInt
+        val rs2Addr = INSTRUCTION(24 downto 20).asUInt
+        rp.logic.readPort1.address := rs1Addr
+        rp.logic.readPort2.address := rs2Addr
+        val rs1 = rp.logic.readPort1.data.asSInt
+        val rs2 = rp.logic.readPort2.data.asSInt
+      }
+    }
+  }
+
   case class AluPlugin() extends FiberPlugin {
     val logic = during setup new Area {
       val addOp = Opcode(M"0000000----------000-----0110011")
@@ -151,6 +170,7 @@ class Cpu extends Component {
       val rp = host[RegfilePlugin]
       val dp = host[DecoderPlugin]
       val wp = host[WriteBackPlugin]
+      val regs = host[RegistersReader]
       val buildBefore = retains(dp.lock)
 
       awaitBuild()
@@ -164,18 +184,16 @@ class Cpu extends Component {
       dp.addDecoding(addiOp, wp.SEL, True)
 
       val aluLogic = new pp.execute.Area {
-        val rs1Addr = INSTRUCTION(19 downto 15).asUInt
-        val rs2Addr = INSTRUCTION(24 downto 20).asUInt
-        rp.logic.readPort1.address := rs1Addr
-        rp.logic.readPort2.address := rs2Addr
-        val rs1 = rp.logic.readPort1.data.asSInt
+        val rs1 = regs.logic.reader.rs1
+        val rs2 = regs.logic.reader.rs2
         val src1 = rs1
-        val rs2 = rp.logic.readPort2.data.asSInt
         val imm = INSTRUCTION(31 downto 20).asSInt.resized
         val src2 = SRC2_CTRL.mux(imm, rs2)
         wp.WRITE_DATA := (src1 + src2).asBits
-        when(SEL) {
+        when(SEL & isValid) {
           val writeRd = pp.write(INSTRUCTION)(11 downto 7).asUInt
+          val rs1Addr = INSTRUCTION(19 downto 15).asUInt
+          val rs2Addr = INSTRUCTION(24 downto 20).asUInt
           when(pp.write.isValid & pp.write(wp.SEL) & (rs1Addr === writeRd | rs2Addr === writeRd)) {
             haltIt() // data hazard
           }
@@ -186,21 +204,43 @@ class Cpu extends Component {
     }
   }
 
-  /*
-  case class JumpHandler() extends FiberPlugin {
-    val logic = {
-      val opcode = Opcode(M"-----------------001-----1100011")
+  case class BeqHandler() extends FiberPlugin {
+    val logic = during setup new Area {
+      val opcode = Opcode(M"-----------------000-----1100011")
       val SEL = Payload(Bool())
       val dp = host[DecoderPlugin]
       val pp = host[PipelinePlugin]
+      val fp = host[FetchPlugin]
+      val rp = host[RegfilePlugin]
+      val wp = host[WriteBackPlugin]
+      val regs = host[RegistersReader]
       val buildBefore = retains(dp.lock)
-      when(IS_JUMP & isValid) {
-        flush := True
-        pcReg := U(INSTRUCTION(15 downto 8))
+      val beq_debug = out(Bool())
+      awaitBuild()
+      dp.addDefault(SEL, False)
+      dp.addDecoding(opcode, SEL, True)
+      val beqLogic = new pp.execute.Area {
+        val rs1 = regs.logic.reader.rs1
+        val rs2 = regs.logic.reader.rs2
+        val regs_eq = (rs1 === rs2)
+        val o12 = INSTRUCTION(31).asUInt
+        val o11 = INSTRUCTION(7).asUInt
+        val o10_5 = INSTRUCTION(30 downto 25).asUInt
+        val o4_1 = INSTRUCTION(11 downto 8).asUInt
+        val offset = ((o4_1 << 1) + (o10_5 << 5) + (o11 << 11) + (o12 << 12)).asSInt
+        beq_debug := SEL & regs_eq
+        // possible data hazard...
+        // for now, how about halt if *anything* is being written?
+        when(isValid & pp.write.isValid & pp.write(wp.SEL)) {
+          haltIt()
+        } otherwise when(SEL & regs_eq & isValid) {
+          pp.flush := True
+          fp.logic.fetchLogic.pcReg := (PC.asSInt + offset).asUInt
+        }
       }
+      buildBefore.release()
     }
   }
-  */
 
   case class OutputPlugin() extends FiberPlugin {
     val logic = during setup new Area {
@@ -214,7 +254,7 @@ class Cpu extends Component {
       dp.addDefault(SEL, False)
       dp.addDecoding(ecallOp, SEL, True)
       val outputLogic = new pp.execute.Area {
-        when(SEL) {
+        when(SEL & isValid) {
           done := True
         }
       }
@@ -234,6 +274,17 @@ class Cpu extends Component {
       val rp = host[RegfilePlugin]
       val regfile = rp.logic.regfile
       regfile.simPublic()
+      val bp = host[BeqHandler]
+      val beq_debug = bp.logic.beq_debug
+      beq_debug.simPublic()
+      val fp = host[FetchPlugin]
+      val pcReg = fp.logic.fetchLogic.pcReg
+      pcReg.simPublic()
+      val regs = host[RegistersReader]
+      val rs1 = regs.logic.reader.rs1
+      rs1.simPublic()
+      val rs2 = regs.logic.reader.rs2
+      rs2.simPublic()
     }
   }
 
@@ -244,7 +295,9 @@ class Cpu extends Component {
     DecoderPlugin(),
     RegfilePlugin(),
     WriteBackPlugin(),
+    RegistersReader(),
     AluPlugin(),
+    BeqHandler(),
     OutputPlugin(),
     whitebox)
 
@@ -252,9 +305,9 @@ class Cpu extends Component {
   host.asHostOf(plugins)
 }
 
-object CpuTest extends App {
+object Simulate extends App {
   if(!List(1, 2).contains(args.length)) {
-    println("usage: mill t.runMain riscv.CpuTest filename.s x")
+    println("usage: mill t.runMain riscv.Simulate tests/test_beq.s")
     System.exit(0)
   }
   val program = io.Source.fromFile(args(0)).mkString
@@ -262,6 +315,7 @@ object CpuTest extends App {
   val parser = new Parser(tokenizer.tokens)
   val assembler = new Assembler(parser.instructions)
 
+  // SpinalVerilog(new Cpu)
   SimConfig.compile { new Cpu }.doSim { dut =>
     /* -- set up program -- */
     for(i <- 0 until assembler.binary.length) {
@@ -280,15 +334,21 @@ object CpuTest extends App {
     cd.waitSampling()
     sleep(10)
     /* -- run -- */ 
-    var fuel = 200
+    val initialFuel = 120
+    var fuel = initialFuel
     while(!dut.whitebox.logic.done.toBoolean && fuel > 0) {
-      sleep(10)
       fuel -= 1
+      println(s"pcReg = ${dut.whitebox.logic.pcReg.toBigInt}")
+      println(s"rs1 = ${dut.whitebox.logic.rs1.toBigInt}, rs2 = ${dut.whitebox.logic.rs2.toBigInt}")
+      println(s"beq_debug = ${dut.whitebox.logic.beq_debug.toBoolean}")
+      println("")
+      sleep(10)
     }
     if(fuel == 0) {
       println("out of fuel?")
     } else {
       println(s"output = ${dut.whitebox.logic.regfile.getBigInt(10)}")
+      println(s"time = ${initialFuel - fuel} cycles")
     }
   }
 }

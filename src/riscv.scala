@@ -313,8 +313,11 @@ class Assembler (instructions : List[Instruction]) {
   }
 
   def assemble_beq(beq : Beq) : BigInt = {
-    // TODO
-    return 0
+    val o11 = (beq.offset >> 11) & 1
+    val o4_1 = (beq.offset >> 1) & b"1111"
+    val o10_5 = (beq.offset >> 5) & b"111111"
+    val o12 = (beq.offset >> 12) & 1
+    return b"1100011" + (o11 << 7) + (o4_1 << 8) + (beq.rs1 << 15) + (beq.rs2 << 20) + (o10_5 << 25) + (BigInt(o12) << 31)
   }
 
   def assemble_instruction(instruction : Instruction) : BigInt = {
@@ -329,7 +332,9 @@ class Assembler (instructions : List[Instruction]) {
       case ecall: Ecall => {
         return assemble_ecall()
       }
-      // case beq: Beq => interpret_beq(beq)
+      case beq: Beq => {
+        return assemble_beq(beq)
+      }
       case _ => {
         throw new RuntimeException(s"Assembler encountered unknown instruction.")
       }
