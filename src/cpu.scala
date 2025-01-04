@@ -55,7 +55,6 @@ class Cpu extends Component {
         val memPort = mp.logic.iBusPort
         val addr = (PC >> 2)
         memPort.address := addr.resized
-        // INSTRUCTION := isValid ? memPort.data | (U"00000000000000000000000000010011").asBits //no-op
         INSTRUCTION := memPort.data
       }
       buildBefore.release()
@@ -134,7 +133,7 @@ class Cpu extends Component {
       awaitBuild()
       dp.addDefault(SEL, False)
       val writeLogic = new pp.write.Area {
-        rp.logic.writePort.valid := SEL
+        rp.logic.writePort.valid := SEL & isValid
         rp.logic.writePort.address := INSTRUCTION(11 downto 7).asUInt
         rp.logic.writePort.data := WRITE_DATA
       }
@@ -244,7 +243,8 @@ class Cpu extends Component {
 
   case class OutputPlugin() extends FiberPlugin {
     val logic = during setup new Area {
-      val done = out(Reg(Bool())) init(False)
+      val done = out(Bool())
+      done := False
       val ecallOp = Opcode(M"00000000000000000000000001110011")
       val SEL = Payload(Bool())
       val dp = host[DecoderPlugin]
@@ -285,6 +285,40 @@ class Cpu extends Component {
       rs1.simPublic()
       val rs2 = regs.logic.reader.rs2
       rs2.simPublic()
+      val pp = host[PipelinePlugin]
+
+      val fetchPc = UInt(32 bits)
+      val fetchValid = Bool()
+      new pp.fetch.Area {
+        fetchPc := PC
+        fetchValid := isValid
+      }
+      fetchPc.simPublic()
+      fetchValid.simPublic()
+      val decodePc = UInt(32 bits)
+      val decodeValid = Bool()
+      new pp.decode.Area {
+        decodePc := PC
+        decodeValid := isValid
+      }
+      decodePc.simPublic()
+      decodeValid.simPublic()
+      val executePc = UInt(32 bits)
+      val executeValid = Bool()
+      new pp.execute.Area {
+        executePc := PC
+        executeValid := isValid
+      }
+      executePc.simPublic()
+      executeValid.simPublic()
+      val writePc = UInt(32 bits)
+      val writeValid = Bool()
+      new pp.write.Area {
+        writePc := PC
+        writeValid := isValid
+      }
+      writePc.simPublic()
+      writeValid.simPublic()
     }
   }
 
@@ -315,7 +349,6 @@ object Simulate extends App {
   val parser = new Parser(tokenizer.tokens)
   val assembler = new Assembler(parser.instructions)
 
-  // SpinalVerilog(new Cpu)
   SimConfig.compile { new Cpu }.doSim { dut =>
     /* -- set up program -- */
     for(i <- 0 until assembler.binary.length) {
@@ -332,17 +365,18 @@ object Simulate extends App {
     cd.waitRisingEdge()
     cd.deassertReset()
     cd.waitSampling()
-    sleep(10)
+    // sleep(10)
     /* -- run -- */ 
     val initialFuel = 120
     var fuel = initialFuel
     while(!dut.whitebox.logic.done.toBoolean && fuel > 0) {
       fuel -= 1
-      println(s"pcReg = ${dut.whitebox.logic.pcReg.toBigInt}")
-      println(s"rs1 = ${dut.whitebox.logic.rs1.toBigInt}, rs2 = ${dut.whitebox.logic.rs2.toBigInt}")
-      println(s"beq_debug = ${dut.whitebox.logic.beq_debug.toBoolean}")
-      println("")
       sleep(10)
+      println(s"PCs = ${dut.whitebox.logic.fetchPc.toBigInt}, ${dut.whitebox.logic.decodePc.toBigInt}, ${dut.whitebox.logic.executePc.toBigInt}, ${dut.whitebox.logic.writePc.toBigInt}")
+      println(s"valids = ${dut.whitebox.logic.fetchValid.toBoolean}, ${dut.whitebox.logic.decodeValid.toBoolean}, ${dut.whitebox.logic.executeValid.toBoolean}, ${dut.whitebox.logic.writeValid.toBoolean}")
+      val regs = List(10, 11, 12, 13, 14, 15).map(i => dut.whitebox.logic.regfile.getBigInt(i))
+      println(s"regs = $regs")
+      println("")
     }
     if(fuel == 0) {
       println("out of fuel?")
