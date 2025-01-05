@@ -243,13 +243,19 @@ class Cpu extends Component {
       val SEL = Payload(Bool())
       val dp = host[DecoderPlugin]
       val pp = host[PipelinePlugin]
+      val wp = host[WriteBackPlugin]
       val buildBefore = retains(dp.lock)
       awaitBuild()
       dp.addDefault(SEL, False)
       dp.addDecoding(ecallOp, SEL, True)
       val outputLogic = new pp.execute.Area {
         when(SEL & isValid) {
-          done := True
+          when(pp.write.isValid & pp.write(wp.SEL)) {
+            done := False
+            haltIt()
+          } otherwise {
+            done := True
+          }
         }
       }
       buildBefore.release()
@@ -356,11 +362,13 @@ object Simulate extends App {
     while(!dut.whitebox.logic.done.toBoolean && fuel > 0) {
       fuel -= 1
       sleep(10)
+      /*
       println(s"PCs = ${dut.whitebox.logic.fetchPc.toBigInt}, ${dut.whitebox.logic.decodePc.toBigInt}, ${dut.whitebox.logic.executePc.toBigInt}, ${dut.whitebox.logic.writePc.toBigInt}")
       println(s"valids = ${dut.whitebox.logic.fetchValid.toBoolean}, ${dut.whitebox.logic.decodeValid.toBoolean}, ${dut.whitebox.logic.executeValid.toBoolean}, ${dut.whitebox.logic.writeValid.toBoolean}")
       val regs = List(10, 11, 12, 13, 14, 15).map(i => dut.whitebox.logic.regfile.getBigInt(i))
       println(s"regs = $regs")
       println("")
+      */
     }
     if(fuel == 0) {
       println("out of fuel?")
