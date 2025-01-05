@@ -282,6 +282,8 @@ class Interpreter (instructions : List[Instruction], x : Integer) {
       case sub: Sub => interpret_sub(sub)
       case ecall: Ecall => interpret_ecall()
       case beq: Beq => interpret_beq(beq)
+      case sw: Sw => interpret_sw(sw)
+      case lw: Lw => interpret_lw(lw)
       case _ => {
         throw new RuntimeException(s"Interpreter encountered unknown instruction.")
       }
