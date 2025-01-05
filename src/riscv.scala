@@ -322,6 +322,17 @@ class Assembler (instructions : List[Instruction]) {
     return b"1100011" + (o11 << 7) + (o4_1 << 8) + (beq.rs1 << 15) + (beq.rs2 << 20) + (o10_5 << 25) + (BigInt(o12) << 31)
   }
 
+  def assemble_sw(sw : Sw) : BigInt = {
+    //println(s"assembling sw with rs2 = ${sw.rs2}, offset = ${sw.offset}, rs1 = ${sw.rs1}")
+    val o4_0 = sw.offset & b"1111"
+    val o11_5 = (sw.offset >> 5) & b"1111111"
+    return b"100011" + (o4_0 << 7) + (b"10" << 12) + (sw.rs1 << 15) + (sw.rs2 << 20) + (BigInt(o11_5) << 25)
+  }
+
+  def assemble_lw(lw : Lw) : BigInt = {
+    return b"11" + (lw.rd << 7) + (b"10" << 12) + (lw.rs1 << 15) + (BigInt(lw.offset) << 20)
+  }
+
   def assemble_instruction(instruction : Instruction) : BigInt = {
     instruction match {
       case add: Add => {
@@ -336,6 +347,12 @@ class Assembler (instructions : List[Instruction]) {
       }
       case beq: Beq => {
         return assemble_beq(beq)
+      }
+      case sw: Sw => {
+        return assemble_sw(sw)
+      }
+      case lw: Lw => {
+        return assemble_lw(lw)
       }
       case _ => {
         throw new RuntimeException(s"Assembler encountered unknown instruction.")

@@ -158,6 +158,49 @@ class Cpu extends Component {
     }
   }
 
+  case class Ram() extends FiberPlugin {
+    val logic = during setup new Area {
+      val mem = Mem.fill(32)(Bits(32 bits))
+      val readPort = mem.readAsyncPort()
+      val writePort = mem.writePort()
+    }
+  }
+
+  case class SwHandler() extends FiberPlugin {
+    val logic = during setup new Area {
+      val swOp = Opcode(M"-----------------010-----0100011")
+      val SEL = Payload(Bool())
+      val dp = host[DecoderPlugin]
+      val rp = host[RegfilePlugin]
+      val pp = host[PipelinePlugin]
+      val regs = host[RegistersReader]
+      val ram = host[Ram]
+      val buildBefore = retains(dp.lock)
+      awaitBuild()
+      dp.addDefault(SEL, False)
+      dp.addDecoding(swOp, SEL, True)
+      new pp.execute.Area {
+        val rs1 = regs.logic.reader.rs1
+        val rs2 = regs.logic.reader.rs2
+        val o11_5 = INSTRUCTION(31 downto 25).asUInt
+        val o4_0 = INSTRUCTION(11 downto 7).asUInt
+        val offset = (o4_0 + (o11_5 << 5)).asSInt
+        ram.logic.writePort.valid := SEL & isValid
+        ram.logic.writePort.address := (rs1 + offset).asUInt.resized
+        ram.logic.writePort.data := rs2.asBits
+      }
+      buildBefore.release()
+    }
+  }
+
+  /*
+  case class LwHandler extends FiberPlugin {
+    val logic = during setup new Area {
+      val lwOp = Opcode(M"-----------------010-----0000011")
+    }
+  }
+  */
+
   case class AluPlugin() extends FiberPlugin {
     val logic = during setup new Area {
       val addOp = Opcode(M"0000000----------000-----0110011")
@@ -251,7 +294,6 @@ class Cpu extends Component {
       val outputLogic = new pp.execute.Area {
         when(SEL & isValid) {
           when(pp.write.isValid & pp.write(wp.SEL)) {
-            done := False
             haltIt()
           } otherwise {
             done := True
@@ -263,8 +305,7 @@ class Cpu extends Component {
   }
 
   case class WhiteboxerPlugin() extends FiberPlugin {
-    val logic = during setup new Area {
-      awaitBuild()
+    val logic = during build new Area {
       val mp = host[MemPlugin]
       val mem = mp.logic.mem
       mem.simPublic()
@@ -276,7 +317,6 @@ class Cpu extends Component {
       regfile.simPublic()
 
       val pp = host[PipelinePlugin]
-
       val fetchPc = UInt(32 bits)
       val fetchValid = Bool()
       new pp.fetch.Area {
@@ -309,6 +349,17 @@ class Cpu extends Component {
       }
       writePc.simPublic()
       writeValid.simPublic()
+
+      val ram_plugin = host[Ram]
+      val ram = ram_plugin.logic.mem
+      ram.simPublic()
+
+      val sw_plugin = host[SwHandler]
+      val swSEL = Bool()
+      swSEL.simPublic()
+      new pp.execute.Area {
+        swSEL := sw_plugin.logic.SEL
+      }
     }
   }
 
@@ -322,7 +373,9 @@ class Cpu extends Component {
     RegistersReader(),
     AluPlugin(),
     BeqHandler(),
+    SwHandler(),
     OutputPlugin(),
+    Ram(),
     whitebox)
 
   val host = new PluginHost()
@@ -367,8 +420,11 @@ object Simulate extends App {
       println(s"valids = ${dut.whitebox.logic.fetchValid.toBoolean}, ${dut.whitebox.logic.decodeValid.toBoolean}, ${dut.whitebox.logic.executeValid.toBoolean}, ${dut.whitebox.logic.writeValid.toBoolean}")
       val regs = List(10, 11, 12, 13, 14, 15).map(i => dut.whitebox.logic.regfile.getBigInt(i))
       println(s"regs = $regs")
-      println("")
       */
+      val ram = (0 to 6).map(i => dut.whitebox.logic.ram.getBigInt(4 * i))
+      println(s"ram = $ram")
+      println(s"swSEL = ${dut.whitebox.logic.swSEL.toBoolean}")
+      println("")
     }
     if(fuel == 0) {
       println("out of fuel?")
