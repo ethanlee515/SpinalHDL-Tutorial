@@ -323,7 +323,7 @@ class Assembler (instructions : List[Instruction]) {
   }
 
   def assemble_sw(sw : Sw) : BigInt = {
-    //println(s"assembling sw with rs2 = ${sw.rs2}, offset = ${sw.offset}, rs1 = ${sw.rs1}")
+    // println(s"assembling sw with rs2 = ${sw.rs2}, offset = ${sw.offset}, rs1 = ${sw.rs1}")
     val o4_0 = sw.offset & b"1111"
     val o11_5 = (sw.offset >> 5) & b"1111111"
     return b"100011" + (o4_0 << 7) + (b"10" << 12) + (sw.rs1 << 15) + (sw.rs2 << 20) + (BigInt(o11_5) << 25)

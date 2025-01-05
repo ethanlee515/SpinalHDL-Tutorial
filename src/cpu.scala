@@ -171,11 +171,12 @@ class Cpu extends Component {
       val swOp = Opcode(M"-----------------010-----0100011")
       val SEL = Payload(Bool())
       val dp = host[DecoderPlugin]
-      val rp = host[RegfilePlugin]
       val pp = host[PipelinePlugin]
       val regs = host[RegistersReader]
+      val wp = host[WriteBackPlugin]
       val ram = host[Ram]
       val buildBefore = retains(dp.lock)
+      val address = UInt(5 bits)
       awaitBuild()
       dp.addDefault(SEL, False)
       dp.addDecoding(swOp, SEL, True)
@@ -185,18 +186,45 @@ class Cpu extends Component {
         val o11_5 = INSTRUCTION(31 downto 25).asUInt
         val o4_0 = INSTRUCTION(11 downto 7).asUInt
         val offset = (o4_0 + (o11_5 << 5)).asSInt
-        ram.logic.writePort.valid := SEL & isValid
-        ram.logic.writePort.address := (rs1 + offset).asUInt.resized
+        address := (rs1 + offset).asUInt.resized
+        ram.logic.writePort.address := address
         ram.logic.writePort.data := rs2.asBits
+        when(pp.write.isValid & pp.write(wp.SEL)) {
+          ram.logic.writePort.valid := False
+          haltIt() // data hazard
+        } otherwise {
+          ram.logic.writePort.valid := SEL & isValid
+        }
       }
       buildBefore.release()
     }
   }
 
   /*
-  case class LwHandler extends FiberPlugin {
+  case class LwHandler() extends FiberPlugin {
     val logic = during setup new Area {
       val lwOp = Opcode(M"-----------------010-----0000011")
+      val SEL = Payload(Bool())
+      val dp = host[DecoderPlugin]
+      val pp = host[PipelinePlugin]
+      val wp = host[WriteBackPlugin]
+      val regs = host[RegistersReader]
+      val ram = host[Ram]
+      val buildBefore = retains(dp.lock)
+      awaitBuild()
+      dp.addDefault(SEL, False)
+      dp.addDecoding(lwOp, SEL, True)
+      dp.addDecoding(lwOp, wp.SEL, True)
+      new pp.execute.Area {
+        // read from ram
+        val rs1 = regs.logic.reader.rs1
+        val offset = INSTRUCTION(31 downto 20).asSInt
+        ram.logic.readPort.address := (rs1 + offset).asUInt.resized
+        val value = ram.logic.readPort.data.asSInt
+        // write onto register
+        wp.WRITE_DATA := value.asBits
+      }
+      buildBefore.release()
     }
   }
   */
@@ -356,9 +384,12 @@ class Cpu extends Component {
 
       val sw_plugin = host[SwHandler]
       val swSEL = Bool()
+      val swAddr = UInt(5 bits)
+      swAddr.simPublic()
       swSEL.simPublic()
       new pp.execute.Area {
         swSEL := sw_plugin.logic.SEL
+        swAddr := sw_plugin.logic.address
       }
     }
   }
@@ -374,6 +405,7 @@ class Cpu extends Component {
     AluPlugin(),
     BeqHandler(),
     SwHandler(),
+    // LwHandler(),
     OutputPlugin(),
     Ram(),
     whitebox)
@@ -423,7 +455,7 @@ object Simulate extends App {
       */
       val ram = (0 to 6).map(i => dut.whitebox.logic.ram.getBigInt(4 * i))
       println(s"ram = $ram")
-      println(s"swSEL = ${dut.whitebox.logic.swSEL.toBoolean}")
+      println(s"sw: SEL = ${dut.whitebox.logic.swSEL.toBoolean}, addr = ${dut.whitebox.logic.swAddr.toInt}")
       println("")
     }
     if(fuel == 0) {
