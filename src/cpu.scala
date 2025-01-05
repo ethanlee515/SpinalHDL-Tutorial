@@ -214,7 +214,6 @@ class Cpu extends Component {
       val wp = host[WriteBackPlugin]
       val regs = host[RegistersReader]
       val buildBefore = retains(dp.lock)
-      val beq_debug = out(Bool())
       awaitBuild()
       dp.addDefault(SEL, False)
       dp.addDecoding(opcode, SEL, True)
@@ -227,12 +226,7 @@ class Cpu extends Component {
         val o10_5 = INSTRUCTION(30 downto 25).asUInt
         val o4_1 = INSTRUCTION(11 downto 8).asUInt
         val offset = ((o4_1 << 1) + (o10_5 << 5) + (o11 << 11) + (o12 << 12)).asSInt
-        beq_debug := SEL & regs_eq
-        // possible data hazard...
-        // for now, how about halt if *anything* is being written?
-        when(isValid & pp.write.isValid & pp.write(wp.SEL)) {
-          haltIt()
-        } otherwise when(SEL & regs_eq & isValid) {
+        when(SEL & regs_eq & isValid) {
           pp.flush := True
           fp.logic.fetchLogic.pcReg := (PC.asSInt + offset).asUInt
         }
@@ -274,17 +268,7 @@ class Cpu extends Component {
       val rp = host[RegfilePlugin]
       val regfile = rp.logic.regfile
       regfile.simPublic()
-      val bp = host[BeqHandler]
-      val beq_debug = bp.logic.beq_debug
-      beq_debug.simPublic()
-      val fp = host[FetchPlugin]
-      val pcReg = fp.logic.fetchLogic.pcReg
-      pcReg.simPublic()
-      val regs = host[RegistersReader]
-      val rs1 = regs.logic.reader.rs1
-      rs1.simPublic()
-      val rs2 = regs.logic.reader.rs2
-      rs2.simPublic()
+
       val pp = host[PipelinePlugin]
 
       val fetchPc = UInt(32 bits)
@@ -381,8 +365,8 @@ object Simulate extends App {
     if(fuel == 0) {
       println("out of fuel?")
     } else {
-      println(s"output = ${dut.whitebox.logic.regfile.getBigInt(10)}")
-      println(s"time = ${initialFuel - fuel} cycles")
+      println(s"output ${dut.whitebox.logic.regfile.getBigInt(10)} after ${initialFuel - fuel} cycles")
+      // println(s"time = ${initialFuel - fuel} cycles")
     }
   }
 }
