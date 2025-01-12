@@ -124,7 +124,10 @@ class Cpu extends Component {
 
   case class WriteBackPlugin() extends FiberPlugin {
     val SEL = Payload(Bool())
-    val WRITE_DATA = Payload(Bits(32 bits))
+    val ALU_WRITE = Payload(Bool())
+    val ALU_WRITE_DATA = Payload(Bits(32 bits))
+    val LW_WRITE = Payload(Bool())
+    val LW_WRITE_DATA = Payload(Bits(32 bits))
     val logic = during setup new Area {
       val pp = host[PipelinePlugin]
       val dp = host[DecoderPlugin]
@@ -135,7 +138,11 @@ class Cpu extends Component {
       val writeLogic = new pp.write.Area {
         rp.logic.writePort.valid := SEL & isValid
         rp.logic.writePort.address := INSTRUCTION(11 downto 7).asUInt
-        rp.logic.writePort.data := WRITE_DATA
+        when(ALU_WRITE) {
+          rp.logic.writePort.data := ALU_WRITE_DATA
+        } otherwise {
+          rp.logic.writePort.data := LW_WRITE_DATA
+        }
       }
       buildBefore.release()
     }
@@ -200,7 +207,6 @@ class Cpu extends Component {
     }
   }
 
-  /*
   case class LwHandler() extends FiberPlugin {
     val logic = during setup new Area {
       val lwOp = Opcode(M"-----------------010-----0000011")
@@ -222,12 +228,12 @@ class Cpu extends Component {
         ram.logic.readPort.address := (rs1 + offset).asUInt.resized
         val value = ram.logic.readPort.data.asSInt
         // write onto register
-        wp.WRITE_DATA := value.asBits
+        wp.LW_WRITE := SEL
+        wp.LW_WRITE_DATA := value.asBits
       }
       buildBefore.release()
     }
   }
-  */
 
   case class AluPlugin() extends FiberPlugin {
     val logic = during setup new Area {
@@ -259,7 +265,8 @@ class Cpu extends Component {
         val src1 = rs1
         val imm = INSTRUCTION(31 downto 20).asSInt.resized
         val src2 = SRC2_CTRL.mux(imm, rs2)
-        wp.WRITE_DATA := (src1 + src2).asBits
+        wp.ALU_WRITE := SEL
+        wp.ALU_WRITE_DATA := (src1 + src2).asBits
         when(SEL & isValid) {
           val writeRd = pp.write(INSTRUCTION)(11 downto 7).asUInt
           val rs1Addr = INSTRUCTION(19 downto 15).asUInt
@@ -405,7 +412,7 @@ class Cpu extends Component {
     AluPlugin(),
     BeqHandler(),
     SwHandler(),
-    // LwHandler(),
+    LwHandler(),
     OutputPlugin(),
     Ram(),
     whitebox)
@@ -453,10 +460,12 @@ object Simulate extends App {
       val regs = List(10, 11, 12, 13, 14, 15).map(i => dut.whitebox.logic.regfile.getBigInt(i))
       println(s"regs = $regs")
       */
+     /*
       val ram = (0 to 6).map(i => dut.whitebox.logic.ram.getBigInt(4 * i))
       println(s"ram = $ram")
       println(s"sw: SEL = ${dut.whitebox.logic.swSEL.toBoolean}, addr = ${dut.whitebox.logic.swAddr.toInt}")
       println("")
+      */
     }
     if(fuel == 0) {
       println("out of fuel?")
