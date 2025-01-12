@@ -238,9 +238,11 @@ class Cpu extends Component {
   case class AluPlugin() extends FiberPlugin {
     val logic = during setup new Area {
       val addOp = Opcode(M"0000000----------000-----0110011")
+      val subOp = Opcode(M"0100000----------000-----0110011")
       val addiOp = Opcode(M"-----------------000-----0010011")
       val SEL = Payload(Bool())
       val SRC2_CTRL = Payload(Bool())
+      val IS_SUB = Payload(Bool())
 
       val pp = host[PipelinePlugin]
       val rp = host[RegfilePlugin]
@@ -254,10 +256,18 @@ class Cpu extends Component {
       dp.addDefault(SEL, False)
       dp.addDecoding(addOp, SEL, True)
       dp.addDecoding(addOp, SRC2_CTRL, False)
+      dp.addDecoding(addOp, IS_SUB, False)
       dp.addDecoding(addOp, wp.SEL, True)
+
       dp.addDecoding(addiOp, SEL, True)
       dp.addDecoding(addiOp, SRC2_CTRL, True)
+      dp.addDecoding(addiOp, IS_SUB, False)
       dp.addDecoding(addiOp, wp.SEL, True)
+
+      dp.addDecoding(subOp, SEL, True)
+      dp.addDecoding(subOp, SRC2_CTRL, False)
+      dp.addDecoding(subOp, IS_SUB, True)
+      dp.addDecoding(subOp, wp.SEL, True)
 
       val aluLogic = new pp.execute.Area {
         val rs1 = regs.logic.reader.rs1
@@ -266,7 +276,7 @@ class Cpu extends Component {
         val imm = INSTRUCTION(31 downto 20).asSInt.resized
         val src2 = SRC2_CTRL.mux(imm, rs2)
         wp.ALU_WRITE := SEL
-        wp.ALU_WRITE_DATA := (src1 + src2).asBits
+        wp.ALU_WRITE_DATA := IS_SUB ? (src1 - src2).asBits | (src1 + src2).asBits
         when(SEL & isValid) {
           val writeRd = pp.write(INSTRUCTION)(11 downto 7).asUInt
           val rs1Addr = INSTRUCTION(19 downto 15).asUInt

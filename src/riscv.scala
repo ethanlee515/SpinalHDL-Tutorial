@@ -306,8 +306,7 @@ class Assembler (instructions : List[Instruction]) {
   }
 
   def assemble_sub(sub : Sub) : BigInt = {
-    // TODO
-    return 0
+    return (b"110011") + (sub.rd << 7) + (sub.rs1 << 15) + (sub.rs2 << 20) + (BigInt(b"1000") << 27)
   }
 
   def assemble_ecall() : BigInt = {
@@ -341,7 +340,9 @@ class Assembler (instructions : List[Instruction]) {
       case addi: Addi => {
         return assemble_addi(addi)
       }
-      // case sub: Sub => interpret_sub(sub)
+      case sub: Sub => {
+        return assemble_sub(sub)
+      }
       case ecall: Ecall => {
         return assemble_ecall()
       }
